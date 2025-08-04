@@ -11,7 +11,7 @@ env:
   ECR_REPOSITORY: strapi-app-rutik
   ECS_CLUSTER: strapi-cluster
   ECS_SERVICE: strapi-service
-  TASK_FAMILY: strapi-task-family
+  TASK_FAMILY: rutik-strapi-task
   CONTAINER_NAME: strapi-container
   CODEDEPLOY_APP_NAME: strapi-codedeploy-app
   CODEDEPLOY_DEPLOYMENT_GROUP: strapi-codedeploy-group
