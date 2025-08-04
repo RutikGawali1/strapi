@@ -31,7 +31,8 @@ jobs:
 
       - name: Set Docker image path and extract commit SHA
         run: |
-          echo "SHORT_SHA=${GITHUB_SHA::8}" >> $GITHUB_ENV
+          SHORT_SHA=$(echo "${GITHUB_SHA}" | cut -c1-8)
+          echo "SHORT_SHA=$SHORT_SHA" >> $GITHUB_ENV
           echo "docker_image=${ECR_REGISTRY}/${ECR_REPOSITORY}" >> $GITHUB_ENV
 
       - name: Debug: List repo contents
