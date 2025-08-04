@@ -34,12 +34,12 @@ jobs:
           echo "SHORT_SHA=${GITHUB_SHA::8}" >> $GITHUB_ENV
           echo "docker_image=${ECR_REGISTRY}/${ECR_REPOSITORY}" >> $GITHUB_ENV
 
-      - name: List current directory (debug)
+      - name: Debug: List repo contents
         run: ls -R
 
       - name: Build Docker image
         run: |
-          docker build -t $docker_image:$IMAGE_TAG ./strapi
+          docker build -t $docker_image:$IMAGE_TAG .
           docker tag $docker_image:$IMAGE_TAG $docker_image:$SHORT_SHA
 
       - name: Push Docker image
