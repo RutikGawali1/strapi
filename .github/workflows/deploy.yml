@@ -18,32 +18,31 @@ env:
 
 jobs:
   deploy:
-    name: Deploy to ECS with CodeDeploy
+    name: Deploy to ECS
     runs-on: ubuntu-latest
 
     steps:
-      - name: 📦 Checkout repository
+      - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: 🔐 Configure AWS credentials
+      - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: 🔑 Login to Amazon ECR
+      - name: Log in to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: 🐳 Build and Push Docker Image to ECR
+      - name: Build and push Docker image
         run: |
           IMAGE_TAG=${{ github.sha }}
-          echo "Building Docker image: $ECR_REPOSITORY:$IMAGE_TAG"
           docker build -t $ECR_REPOSITORY:$IMAGE_TAG .
           docker tag $ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
 
-      - name: 📄 Render new ECS Task Definition
+      - name: Create new ECS task definition
         id: render-task
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
@@ -51,13 +50,7 @@ jobs:
           container-name: ${{ env.CONTAINER_NAME }}
           image: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
 
-      - name: 🧪 Print rendered task definition file path
-        run: echo "Rendered task definition: ${{ steps.render-task.outputs.task-definition }}"
-
-      - name: 📜 View task definition contents
-        run: cat ${{ steps.render-task.outputs.task-definition }}
-
-      - name: 🚀 Deploy via AWS CodeDeploy
+      - name: Deploy via CodeDeploy
         uses: aws-actions/amazon-ecs-deploy-task-definition@v1
         with:
           task-definition: ${{ steps.render-task.outputs.task-definition }}
