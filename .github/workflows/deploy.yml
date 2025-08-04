@@ -57,15 +57,28 @@ jobs:
         id: register-task-def
         run: |
           NEW_IMAGE=$IMAGE_URI
-          cat task-def.json | \
-            jq --arg IMAGE "$NEW_IMAGE" \
-            --arg NAME "$CONTAINER_NAME" \
-            '.containerDefinitions |= map(if .name == $NAME then .image = $IMAGE else . end)' > new-task-def.json
+
+          jq 'del(
+              .taskDefinitionArn,
+              .revision,
+              .status,
+              .requiresAttributes,
+              .compatibilities,
+              .registeredAt,
+              .registeredBy
+            ) |
+            .containerDefinitions |= map(
+              if .name == env.CONTAINER_NAME then
+                .image = env.NEW_IMAGE
+              else
+                .
+              end
+            )' task-def.json > new-task-def.json
 
           aws ecs register-task-definition \
             --cli-input-json file://new-task-def.json > new-task-def-response.json
 
-          NEW_REVISION=$(cat new-task-def-response.json | jq -r '.taskDefinition.revision')
+          NEW_REVISION=$(jq -r '.taskDefinition.revision' new-task-def-response.json)
           echo "NEW_REVISION=$NEW_REVISION" >> $GITHUB_ENV
 
       - name: Update ECS service to use new task revision
