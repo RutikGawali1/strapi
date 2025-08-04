@@ -1,4 +1,4 @@
-name: CI - Build and Push Docker Image
+name: deploy - Build and Push Docker Image
 
 on:
   workflow_dispatch:
