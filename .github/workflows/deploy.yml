@@ -1,4 +1,4 @@
-name: Dockerize and Push to ECR
+name: Deploy to Amazon ECS via CodeDeploy
 
 on:
   push:
@@ -9,14 +9,20 @@ env:
   AWS_REGION: us-east-2
   ECR_REGISTRY: 607700977843.dkr.ecr.us-east-2.amazonaws.com
   ECR_REPOSITORY: strapi-app-rutik
-  IMAGE_TAG: latest
+  ECS_CLUSTER: strapi-cluster
+  ECS_SERVICE: strapi-service
+  TASK_FAMILY: strapi-task-family
+  CONTAINER_NAME: strapi-container
+  CODEDEPLOY_APP_NAME: strapi-codedeploy-app
+  CODEDEPLOY_DEPLOYMENT_GROUP: strapi-codedeploy-group
 
 jobs:
   deploy:
+    name: Build and Deploy to ECS
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repo/code
+      - name: Checkout source
         uses: actions/checkout@v4
 
       - name: Configure AWS credentials
@@ -26,24 +32,54 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Login to Amazon ECR
+      - name: Log in to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Extract Short SHA
-        id: sha
-        run: echo "SHORT_SHA=${GITHUB_SHA::8}" >> $GITHUB_ENV
+      - name: Extract short commit SHA
+        run: echo "SHORT_SHA=$(echo $GITHUB_SHA | cut -c1-8)" >> $GITHUB_ENV
 
-      - name: Build Docker image
+      - name: Build and tag Docker image
         run: |
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG ./strapi-dev
-          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:$SHORT_SHA
+          IMAGE_URI=${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:$SHORT_SHA
+          docker build -t $IMAGE_URI .
+          docker push $IMAGE_URI
+          echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
 
-      - name: Push Docker image
+      - name: Get latest task definition
+        id: get-task-def
         run: |
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$SHORT_SHA
+          aws ecs describe-task-definition \
+            --task-definition $TASK_FAMILY \
+            --query taskDefinition \
+            --output json > task-def.json
 
-      - name: Output ECR Image URL
+      - name: Create new task definition with new image
+        id: register-task-def
         run: |
-          echo "Image pushed: $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
-          echo "Pushed Image: $ECR_REGISTRY/$ECR_REPOSITORY:$SHORT_SHA"
+          NEW_IMAGE=$IMAGE_URI
+          cat task-def.json | \
+            jq --arg IMAGE "$NEW_IMAGE" \
+            --arg NAME "$CONTAINER_NAME" \
+            '.containerDefinitions |= map(if .name == $NAME then .image = $IMAGE else . end)' > new-task-def.json
+
+          aws ecs register-task-definition \
+            --cli-input-json file://new-task-def.json > new-task-def-response.json
+
+          NEW_REVISION=$(cat new-task-def-response.json | jq -r '.taskDefinition.revision')
+          echo "NEW_REVISION=$NEW_REVISION" >> $GITHUB_ENV
+
+      - name: Update ECS service to use new task revision
+        run: |
+          aws ecs update-service \
+            --cluster $ECS_CLUSTER \
+            --service $ECS_SERVICE \
+            --task-definition $TASK_FAMILY:$NEW_REVISION
+
+      - name: Trigger CodeDeploy deployment
+        run: |
+          aws deploy create-deployment \
+            --application-name $CODEDEPLOY_APP_NAME \
+            --deployment-group-name $CODEDEPLOY_DEPLOYMENT_GROUP \
+            --deployment-config-name CodeDeployDefault.ECSAllAtOnce \
+            --description "GitHub Actions Deployment $GITHUB_SHA" \
+            --revision revisionType=AppSpecContent,appSpecContent="{\"content\":\"version: 1\nResources:\n  - TargetService:\n      Type: AWS::ECS::Service\n      Properties:\n        TaskDefinition: $TASK_FAMILY:$NEW_REVISION\n        LoadBalancerInfo:\n          ContainerName: $CONTAINER_NAME\n          ContainerPort: 1337\"}"
