@@ -1,0 +1,131 @@
+name: Strapi Production Deployment - Build, Push, Deploy via CodeDeploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      ecr-registry:
+        description: 'The Amazon ECR registry URL'
+        required: true
+        type: string
+        default: "607700977843.dkr.ecr.us-east-2.amazonaws.com"
+      ecr-repository:
+        description: 'The Amazon ECR repository name'
+        required: true
+        type: string
+        default: strapi-app-rutik
+      aws-region:
+        description: 'The AWS region'
+        required: true
+        type: string
+        default: us-east-2
+      dockerfile-path:
+        description: 'Path to Dockerfile'
+        required: true
+        type: string
+        default: .
+
+env:
+  ECS_TASK_DEFINITION: "strapi-task-rutik"
+  ECS_CLUSTER_NAME: "task11-strapi-cluster-rutik"
+  ECS_SERVICE_NAME: "strapi-service-rutik"
+  CONTAINER_NAME: "rutik-strapi"
+  CODEDEPLOY_APP_NAME: "StrapiCodeDeployApp-rutik"
+  CODEDEPLOY_GROUP_NAME: "StrapiDeployGroup-dg"
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    env:
+      ECR_REGISTRY: ${{ inputs.ecr-registry }}
+      IMAGE_NAME: ${{ inputs.ecr-repository }}
+      SHORT_SHA: ${{ github.sha }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ inputs.aws-region }}
+
+      - name: Log in to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Build and Tag Docker Image
+        run: |
+          docker build -t $ECR_REGISTRY/$IMAGE_NAME:latest ${{ inputs.dockerfile-path }}
+          docker tag $ECR_REGISTRY/$IMAGE_NAME:latest $ECR_REGISTRY/$IMAGE_NAME:$SHORT_SHA
+
+      - name: Push Docker Images
+        run: |
+          docker push $ECR_REGISTRY/$IMAGE_NAME:latest
+          docker push $ECR_REGISTRY/$IMAGE_NAME:$SHORT_SHA
+
+      - name: Fetch Existing Task Definition
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition $ECS_TASK_DEFINITION \
+            --query taskDefinition > task-definition.json
+
+      - name: Render Updated Task Definition
+        id: render-task
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-definition.json
+          container-name: ${{ env.CONTAINER_NAME }}
+          image: ${{ env.ECR_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.SHORT_SHA }}
+
+      - name: Register New Task Definition
+        id: register-task
+        run: |
+          TASK_DEF_FILE="${{ steps.render-task.outputs.task-definition }}"
+          TASK_DEF_ARN=$(aws ecs register-task-definition \
+            --cli-input-json file://$TASK_DEF_FILE \
+            --query "taskDefinition.taskDefinitionArn" \
+            --output text)
+          echo "TASK_DEF_ARN=$TASK_DEF_ARN" >> $GITHUB_ENV
+
+      - name: Create AppSpec for CodeDeploy
+        run: |
+          echo "{
+            \"version\": 1,
+            \"Resources\": [
+              {
+                \"TargetService\": {
+                  \"Type\": \"AWS::ECS::Service\",
+                  \"Properties\": {
+                    \"TaskDefinition\": \"${TASK_DEF_ARN}\",
+                    \"LoadBalancerInfo\": {
+                      \"ContainerName\": \"${{ env.CONTAINER_NAME }}\",
+                      \"ContainerPort\": 1337
+                    }
+                  }
+                }
+              }
+            ]
+          }" > appspec.json
+
+      - name: Deploy using CodeDeploy
+        run: |
+          APPSPEC=$(cat appspec.json | jq -Rs .)
+          aws deploy create-deployment \
+            --application-name ${{ env.CODEDEPLOY_APP_NAME }} \
+            --deployment-group-name ${{ env.CODEDEPLOY_GROUP_NAME }} \
+            --deployment-config-name CodeDeployDefault.ECSCanary10Percent5Minutes \
+            --cli-input-json "{
+              \"applicationName\": \"${{ env.CODEDEPLOY_APP_NAME }}\",
+              \"deploymentGroupName\": \"${{ env.CODEDEPLOY_GROUP_NAME }}\",
+              \"revision\": {
+                \"revisionType\": \"AppSpecContent\",
+                \"appSpecContent\": {
+                  \"content\": $APPSPEC
+                }
+              }
+            }"
