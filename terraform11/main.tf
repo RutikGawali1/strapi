@@ -186,7 +186,7 @@ resource "aws_codedeploy_app" "strapi_app" {
 
 resource "aws_codedeploy_deployment_group" "strapi_deployment_group" {
   app_name              = aws_codedeploy_app.strapi_app.name
-  deployment_group_name = "StrapiDeployGroup-dg"
+  deployment_group_name = "StrapiDeployGroup"
   service_role_arn      = aws_iam_role.codedeploy_ecs_role.arn
 
   deployment_config_name = "CodeDeployDefault.ECSCanary10Percent5Minutes"
