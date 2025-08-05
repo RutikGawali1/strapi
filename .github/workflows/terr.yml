@@ -1,6 +1,9 @@
 name: Strapi Production Deployment - Build, Push, Deploy via CodeDeploy
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       ecr-registry:
@@ -34,14 +37,16 @@ env:
   CONTAINER_NAME: rutik-strapi
   CODEDEPLOY_APP_NAME: StrapiCodeDeployApp-rutik
   CODEDEPLOY_DEPLOYMENT_GROUP: StrapiDeployGroup
+  ECS_TASK_DEFINITION: rutik-strapi-task  # Added missing variable
+  CODEDEPLOY_GROUP_NAME: StrapiDeployGroup  # Added missing variable
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
 
     env:
-      ECR_REGISTRY: ${{ inputs.ecr-registry }}
-      IMAGE_NAME: ${{ inputs.ecr-repository }}
+      ECR_REGISTRY: ${{ inputs.ecr-registry || env.ECR_REGISTRY }}
+      IMAGE_NAME: ${{ inputs.ecr-repository || env.ECR_REPOSITORY }}
       SHORT_SHA: ${{ github.sha }}
 
     steps:
@@ -56,14 +61,14 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ inputs.aws-region }}
+          aws-region: ${{ inputs.aws-region || env.AWS_REGION }}
 
       - name: Log in to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v1
 
       - name: Build and Tag Docker Image
         run: |
-          docker build -t $ECR_REGISTRY/$IMAGE_NAME:latest ${{ inputs.dockerfile-path }}
+          docker build -t $ECR_REGISTRY/$IMAGE_NAME:latest ${{ inputs.dockerfile-path || '.' }}
           docker tag $ECR_REGISTRY/$IMAGE_NAME:latest $ECR_REGISTRY/$IMAGE_NAME:$SHORT_SHA
 
       - name: Push Docker Images
@@ -120,11 +125,11 @@ jobs:
           APPSPEC=$(cat appspec.json | jq -Rs .)
           aws deploy create-deployment \
             --application-name ${{ env.CODEDEPLOY_APP_NAME }} \
-            --deployment-group-name ${{ env.CODEDEPLOY_GROUP_NAME }} \
+            --deployment-group-name ${{ env.CODEDEPLOY_DEPLOYMENT_GROUP }} \
             --deployment-config-name CodeDeployDefault.ECSCanary10Percent5Minutes \
             --cli-input-json "{
               \"applicationName\": \"${{ env.CODEDEPLOY_APP_NAME }}\",
-              \"deploymentGroupName\": \"${{ env.CODEDEPLOY_GROUP_NAME }}\",
+              \"deploymentGroupName\": \"${{ env.CODEDEPLOY_DEPLOYMENT_GROUP }}\",
               \"revision\": {
                 \"revisionType\": \"AppSpecContent\",
                 \"appSpecContent\": {
