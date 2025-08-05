@@ -25,12 +25,15 @@ on:
         default: .
 
 env:
-  ECS_TASK_DEFINITION: "strapi-task-rutik"
-  ECS_CLUSTER_NAME: "task11-strapi-cluster-rutik"
-  ECS_SERVICE_NAME: "strapi-service-rutik"
-  CONTAINER_NAME: "rutik-strapi"
-  CODEDEPLOY_APP_NAME: "StrapiCodeDeployApp-rutik"
-  CODEDEPLOY_GROUP_NAME: "StrapiDeployGroup-dg"
+  AWS_REGION: us-east-2
+  ECR_REGISTRY: 607700977843.dkr.ecr.us-east-2.amazonaws.com
+  ECR_REPOSITORY: strapi-app-rutik
+  ECS_CLUSTER: task11-strapi-cluster-rutik
+  ECS_SERVICE: strapi-service-rutik
+  TASK_FAMILY: rutik-strapi-task
+  CONTAINER_NAME: rutik-strapi
+  CODEDEPLOY_APP_NAME: StrapiCodeDeployApp-rutik
+  CODEDEPLOY_DEPLOYMENT_GROUP: StrapiDeployGroup
 
 jobs:
   build-and-deploy:
