@@ -1,4 +1,4 @@
-name: terraform11 with ECS Blue/Green Deployment
+name: Terraform with ECS Blue/Green Deployment
 
 on:
   workflow_run:
@@ -12,10 +12,10 @@ env:
   ECR_REPOSITORY: strapi-app-rutik
   ECR_REGISTRY: 607700977843.dkr.ecr.us-east-2.amazonaws.com
   IMAGE_TAG: latest
- 
+
 jobs:
-  terraform11:
-    name: Apply terraform11 Infrastructure
+  terraform:
+    name: Apply Terraform Infrastructure
     runs-on: ubuntu-latest
 
     defaults:
@@ -27,7 +27,7 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Download terraform11 State (if available)
+      - name: Download Terraform State (if available)
         uses: actions/download-artifact@v4
         with:
           name: terraform11-state
@@ -41,29 +41,31 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Setup terraform11 CLI
-        uses: hashicorp/setup-terraform11@v2
+      - name: Setup Terraform CLI
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.1.9
 
-      - name: terraform11 Init
-        run: terraform11 init
+      - name: Terraform Init
+        run: terraform init
 
-      - name: terraform11 Plan
+      - name: Terraform Plan
         id: plan
         run: |
-          terraform11 plan -no-color -input=false \
+          terraform plan -no-color -input=false \
             -var="region=${{ env.AWS_REGION }}" \
             -var="ecs_task_execution_role_arn=${{ secrets.ECS_ROLE_ARN }}"
 
-      - name: terraform11 Apply
+      - name: Terraform Apply
         run: |
-          terraform11 apply -auto-approve -input=false \
+          terraform apply -auto-approve -input=false \
             -var="region=${{ env.AWS_REGION }}" \
             -var="ecs_task_execution_role_arn=${{ secrets.ECS_ROLE_ARN }}"
 
-      - name: Upload terraform11 State
+      - name: Upload Terraform State
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: terraform11-state
-          path: ./terraform11/terraform11.tfstate
+          path: ./terraform11/terraform.tfstate
           retention-days: 30
