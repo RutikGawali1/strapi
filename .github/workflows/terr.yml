@@ -1,9 +1,6 @@
 name: Strapi Production Deployment - Build, Push, Deploy via CodeDeploy
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
     inputs:
       ecr-registry:
@@ -33,20 +30,18 @@ env:
   ECR_REPOSITORY: strapi-app-rutik
   ECS_CLUSTER: task11-strapi-cluster-rutik
   ECS_SERVICE: strapi-service-rutik
-  TASK_FAMILY: rutik-strapi-task
+  TASK_FAMILY: strapi-task-rutik
   CONTAINER_NAME: rutik-strapi
   CODEDEPLOY_APP_NAME: StrapiCodeDeployApp-rutik
   CODEDEPLOY_DEPLOYMENT_GROUP: StrapiDeployGroup
-  ECS_TASK_DEFINITION: rutik-strapi-task  # Added missing variable
-  CODEDEPLOY_GROUP_NAME: StrapiDeployGroup  # Added missing variable
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
 
     env:
-      ECR_REGISTRY: ${{ inputs.ecr-registry || env.ECR_REGISTRY }}
-      IMAGE_NAME: ${{ inputs.ecr-repository || env.ECR_REPOSITORY }}
+      ECR_REGISTRY: ${{ inputs.ecr-registry }}
+      IMAGE_NAME: ${{ inputs.ecr-repository }}
       SHORT_SHA: ${{ github.sha }}
 
     steps:
@@ -61,14 +56,14 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ inputs.aws-region || env.AWS_REGION }}
+          aws-region: ${{ inputs.aws-region }}
 
       - name: Log in to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v1
 
       - name: Build and Tag Docker Image
         run: |
-          docker build -t $ECR_REGISTRY/$IMAGE_NAME:latest ${{ inputs.dockerfile-path || '.' }}
+          docker build -t $ECR_REGISTRY/$IMAGE_NAME:latest ${{ inputs.dockerfile-path }}
           docker tag $ECR_REGISTRY/$IMAGE_NAME:latest $ECR_REGISTRY/$IMAGE_NAME:$SHORT_SHA
 
       - name: Push Docker Images
@@ -79,7 +74,7 @@ jobs:
       - name: Fetch Existing Task Definition
         run: |
           aws ecs describe-task-definition \
-            --task-definition $ECS_TASK_DEFINITION \
+            --task-definition ${{ env.TASK_FAMILY }} \
             --query taskDefinition > task-definition.json
 
       - name: Render Updated Task Definition
@@ -137,3 +132,14 @@ jobs:
                 }
               }
             }"
+
+      - name: Wait for Deployment to Complete
+        run: |
+          DEPLOYMENT_ID=$(aws deploy list-deployments \
+            --application-name ${{ env.CODEDEPLOY_APP_NAME }} \
+            --deployment-group-name ${{ env.CODEDEPLOY_DEPLOYMENT_GROUP }} \
+            --query "deployments[0]" \
+            --output text)
+
+          echo "Waiting for deployment $DEPLOYMENT_ID to finish..."
+          aws deploy wait deployment-successful --deployment-id $DEPLOYMENT_ID
