@@ -1,29 +1,9 @@
-name: Strapi Production Deployment - Build, Push, Deploy via CodeDeploy
+name: Strapi Production Deployment - CodeDeploy
 
 on:
-  workflow_dispatch:
-    inputs:
-      ecr-registry:
-        description: 'The Amazon ECR registry URL'
-        required: true
-        type: string
-        default: "607700977843.dkr.ecr.us-east-2.amazonaws.com"
-      ecr-repository:
-        description: 'The Amazon ECR repository name'
-        required: true
-        type: string
-        default: strapi-app-rutik
-      aws-region:
-        description: 'The AWS region'
-        required: true
-        type: string
-        default: us-east-2
-      dockerfile-path:
-        description: 'Path to Dockerfile'
-        required: true
-        type: string
-        default: .
-
+  push:
+    branches:
+      - main
 env:
   AWS_REGION: us-east-2
   ECR_REGISTRY: 607700977843.dkr.ecr.us-east-2.amazonaws.com
@@ -40,8 +20,6 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      ECR_REGISTRY: ${{ inputs.ecr-registry }}
-      IMAGE_NAME: ${{ inputs.ecr-repository }}
       SHORT_SHA: ${{ github.sha }}
 
     steps:
@@ -56,25 +34,23 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ inputs.aws-region }}
+          aws-region: ${{ env.AWS_REGION }}
 
       - name: Log in to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v1
 
-      - name: Build and Tag Docker Image
+      - name: Build and Push Docker Image
         run: |
-          docker build -t $ECR_REGISTRY/$IMAGE_NAME:latest ${{ inputs.dockerfile-path }}
-          docker tag $ECR_REGISTRY/$IMAGE_NAME:latest $ECR_REGISTRY/$IMAGE_NAME:$SHORT_SHA
-
-      - name: Push Docker Images
-        run: |
-          docker push $ECR_REGISTRY/$IMAGE_NAME:latest
-          docker push $ECR_REGISTRY/$IMAGE_NAME:$SHORT_SHA
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:latest $ECR_REGISTRY/$ECR_REPOSITORY:$SHORT_SHA
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$SHORT_SHA
+          echo "IMAGE_URI=$ECR_REGISTRY/$ECR_REPOSITORY:$SHORT_SHA" >> $GITHUB_ENV
 
       - name: Fetch Existing Task Definition
         run: |
           aws ecs describe-task-definition \
-            --task-definition ${{ env.TASK_FAMILY }} \
+            --task-definition $TASK_FAMILY \
             --query taskDefinition > task-definition.json
 
       - name: Render Updated Task Definition
@@ -83,7 +59,7 @@ jobs:
         with:
           task-definition: task-definition.json
           container-name: ${{ env.CONTAINER_NAME }}
-          image: ${{ env.ECR_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.SHORT_SHA }}
+          image: ${{ env.IMAGE_URI }}
 
       - name: Register New Task Definition
         id: register-task
